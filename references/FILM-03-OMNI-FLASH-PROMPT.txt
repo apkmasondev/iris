@@ -1,0 +1,5 @@
+Use the uploaded image as the exact first frame of one continuous 10-second shot. Keep the camera locked and perfectly centered. Preserve the aperture’s geometry, scale, dark gunmetal material, low-key lighting, monochrome palette, and the exact position of the central white point. No morph or visual jump at the beginning.
+
+Hold still for one second. The central point subtly pulses and sends one thin circular scanning wave across the metal. The inner aperture ring slowly rotates a few degrees clockwise while the next ring rotates counterclockwise, with precise rigid mechanical motion. The point stretches into a narrow artificial vertical slit of cold white light, then contracts back to the original point.
+
+End with one full second of complete stillness. Cinematic photorealism, deep blacks, restrained silver highlights. No biological eye, flesh, changing blade shapes, duplicated parts, camera movement, zoom, cuts, particles, smoke, colored light, text, logo, watermark, or audio.
