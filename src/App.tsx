@@ -4,6 +4,10 @@ const VIDEO_ONE = `${import.meta.env.BASE_URL}video/01-iris-opening-gop1.mp4`;
 const VIDEO_TWO = `${import.meta.env.BASE_URL}video/02-iris-signal-gop1.mp4`;
 const VIDEO_THREE = `${import.meta.env.BASE_URL}video/03-iris-response-gop1.mp4`;
 const FRAME_DURATION = 1 / 24;
+const SEEK_THRESHOLD = FRAME_DURATION * 0.62;
+const MAXIMUM_FRAME_STEP = FRAME_DURATION * 2.25;
+const SCROLL_SMOOTHING_MS = 110;
+const PROGRESS_EPSILON = 0.00004;
 
 const clamp = (value: number, min = 0, max = 1) =>
   Math.min(max, Math.max(min, value));
@@ -18,6 +22,25 @@ const envelope = (value: number, enter: number, hold: number, exit: number) => {
   const fadeOut = 1 - smooth(range(value, exit, Math.min(exit + 0.07, 1)));
   return Math.min(fadeIn, fadeOut);
 };
+
+function advanceVideo(video: HTMLVideoElement, targetTime: number, speedMultiplier = 1) {
+  const maxTime = Math.max(0, (video.duration || 0) - FRAME_DURATION);
+  const target = clamp(targetTime, 0, maxTime);
+  const difference = target - video.currentTime;
+
+  if (Math.abs(difference) <= SEEK_THRESHOLD) return false;
+  if (video.seeking) return true;
+
+  const maxStep = MAXIMUM_FRAME_STEP * Math.max(1, speedMultiplier);
+  const steppedTime = video.currentTime + clamp(
+    difference,
+    -maxStep,
+    maxStep,
+  );
+  const frameTime = Math.round(steppedTime / FRAME_DURATION) * FRAME_DURATION;
+  video.currentTime = clamp(frameTime, 0, maxTime);
+  return true;
+}
 
 type CopyRefs = {
   intro: HTMLDivElement | null;
@@ -48,7 +71,6 @@ export default function App() {
   });
   const targetTimes = useRef([0, 0, 0]);
   const videoReady = useRef([false, false, false]);
-  const rafRef = useRef<number | null>(null);
   const readyTimerRef = useRef<number | null>(null);
   const [loadProgress, setLoadProgress] = useState(0);
   const [booting, setBooting] = useState(true);
@@ -147,8 +169,12 @@ export default function App() {
   useEffect(() => {
     const experience = experienceRef.current;
     const stage = stageRef.current;
-    if (!experience || !stage) return;
+    const first = firstVideoRef.current;
+    const second = secondVideoRef.current;
+    const third = thirdVideoRef.current;
+    if (!experience || !stage || !first || !second || !third) return;
 
+    const videos = [first, second, third];
     const copies = copyRefs.current;
     let animationFrame: number | null = null;
     let targetProgress = 0;
@@ -167,19 +193,14 @@ export default function App() {
       return reducedMotion ? 1 : clamp(-rect.top / distance);
     };
 
-    const render = (progress: number) => {
-
+    const render = (progress: number, speedMultiplier = 1) => {
       const firstCrossfade = smooth(range(progress, 0.3, 0.36));
       const secondCrossfade = smooth(range(progress, 0.6, 0.67));
       const reveal = smooth(range(progress, 0.005, 0.045));
       const finalSignal = smooth(range(progress, 0.78, 0.975));
 
-      const first = firstVideoRef.current;
-      const second = secondVideoRef.current;
-      const third = thirdVideoRef.current;
-
-      const secondReady = second && videoReady.current[1] && second.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
-      const thirdReady = third && videoReady.current[2] && third.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
+      const secondReady = videoReady.current[1] && second.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
+      const thirdReady = videoReady.current[2] && third.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
 
       const effectiveFirstCrossfade = secondReady ? firstCrossfade : 0;
       const effectiveSecondCrossfade = thirdReady ? secondCrossfade : 0;
@@ -188,18 +209,13 @@ export default function App() {
       const secondOpacity = (secondReady ? firstCrossfade : 0) * (1 - effectiveSecondCrossfade);
       const thirdOpacity = effectiveSecondCrossfade;
 
-      if (first) {
-        first.style.opacity = firstOpacity.toFixed(3);
-        targetTimes.current[0] = range(progress, 0.04, 0.34) * (first.duration || 0);
-      }
-      if (second) {
-        second.style.opacity = secondOpacity.toFixed(3);
-        targetTimes.current[1] = range(progress, 0.34, 0.64) * (second.duration || 0);
-      }
-      if (third) {
-        third.style.opacity = thirdOpacity.toFixed(3);
-        targetTimes.current[2] = range(progress, 0.64, 0.91) * (third.duration || 0);
-      }
+      first.style.opacity = firstOpacity.toFixed(3);
+      second.style.opacity = secondOpacity.toFixed(3);
+      third.style.opacity = thirdOpacity.toFixed(3);
+
+      targetTimes.current[0] = range(progress, 0.04, 0.34) * (first.duration || 0);
+      targetTimes.current[1] = range(progress, 0.34, 0.64) * (second.duration || 0);
+      targetTimes.current[2] = range(progress, 0.64, 0.91) * (third.duration || 0);
 
       stage.style.setProperty("--progress", progress.toFixed(4));
       stage.style.setProperty("--signal", finalSignal.toFixed(4));
@@ -226,22 +242,36 @@ export default function App() {
       if (progress >= 0.93) { chapter = "05"; status = "CONTACT COMPLETE"; }
       if (chapterRef.current) chapterRef.current.textContent = chapter;
       if (statusRef.current) statusRef.current.textContent = status;
+
+      if (reducedMotion || document.hidden) return false;
+
+      const active = [progress <= 0.39, progress >= 0.30 && progress <= 0.70, progress >= 0.60];
+      return videos.reduce(
+        (needsUpdate, video, index) =>
+          active[index] && videoReady.current[index] && advanceVideo(video, targetTimes.current[index], speedMultiplier)
+            ? true
+            : needsUpdate,
+        false,
+      );
     };
 
     const tick = (time: number) => {
       animationFrame = null;
-      const elapsed = Math.min(time - lastFrameTime, 64);
+      const elapsed = Math.min(Math.max(time - lastFrameTime, 0), 64);
       lastFrameTime = time;
       const distance = targetProgress - renderedProgress;
-      const easing = 1 - Math.exp(-elapsed / 145);
 
-      renderedProgress = Math.abs(distance) < 0.00004
+      renderedProgress = reducedMotion || Math.abs(distance) < PROGRESS_EPSILON
         ? targetProgress
-        : renderedProgress + distance * easing;
-      render(renderedProgress);
+        : renderedProgress + distance * (1 - Math.exp(-elapsed / SCROLL_SMOOTHING_MS));
 
-      if (Math.abs(targetProgress - renderedProgress) >= 0.00004) {
-        animationFrame = requestAnimationFrame(tick);
+      const velocity = Math.abs(distance);
+      const speedMultiplier = Math.min(6, 1 + velocity * 25);
+      const videosNeedUpdate = render(renderedProgress, speedMultiplier);
+      const progressNeedsUpdate = Math.abs(targetProgress - renderedProgress) >= PROGRESS_EPSILON;
+
+      if (progressNeedsUpdate || videosNeedUpdate) {
+        animationFrame = window.requestAnimationFrame(tick);
       }
     };
 
@@ -249,45 +279,22 @@ export default function App() {
       targetProgress = measureProgress();
       if (animationFrame !== null) return;
       lastFrameTime = performance.now();
-      animationFrame = requestAnimationFrame(tick);
+      animationFrame = window.requestAnimationFrame(tick);
     };
 
     targetProgress = measureProgress();
     renderedProgress = targetProgress;
     render(renderedProgress);
+
     window.addEventListener("scroll", schedule, { passive: true });
     window.addEventListener("resize", schedule, { passive: true });
+    document.addEventListener("visibilitychange", schedule);
 
     return () => {
       window.removeEventListener("scroll", schedule);
       window.removeEventListener("resize", schedule);
+      document.removeEventListener("visibilitychange", schedule);
       if (animationFrame !== null) cancelAnimationFrame(animationFrame);
-    };
-  }, [reducedMotion]);
-
-  useEffect(() => {
-    const updateVideoTimes = () => {
-      if (!document.hidden && !reducedMotion) {
-        [firstVideoRef.current, secondVideoRef.current, thirdVideoRef.current].forEach((video, index) => {
-          if (!video || !videoReady.current[index] || video.seeking) return;
-          const maxTime = Math.max(0, (video.duration || 0) - FRAME_DURATION);
-          const rawTarget = clamp(targetTimes.current[index], 0, maxTime);
-          const difference = rawTarget - video.currentTime;
-          if (Math.abs(difference) > FRAME_DURATION * 0.62) {
-            const absDiff = Math.abs(difference);
-            const maximumStep = absDiff > FRAME_DURATION * 4 ? absDiff : FRAME_DURATION * 2.25;
-            const steppedTime = video.currentTime + clamp(difference, -maximumStep, maximumStep);
-            const target = Math.round(steppedTime / FRAME_DURATION) * FRAME_DURATION;
-            video.currentTime = clamp(target, 0, maxTime);
-          }
-        });
-      }
-      rafRef.current = requestAnimationFrame(updateVideoTimes);
-    };
-
-    rafRef.current = requestAnimationFrame(updateVideoTimes);
-    return () => {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
   }, [reducedMotion]);
 
