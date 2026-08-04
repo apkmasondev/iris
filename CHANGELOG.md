@@ -11,8 +11,10 @@ All notable changes to **The Iris** project will be documented in this file.
   - Implemented dynamic scroll-velocity frame step scaling (`speedMultiplier` up to 6x) in `advanceVideo`, eliminating mobile stuttering during rapid scrolling.
   - Implemented video `seeking` frame hold in `tick()`, keeping RAF active until video hardware decoders render target frames.
   - Added `timeline.active` filtering so inactive background videos skip decoding cycles.
-- **Opaque Layer Stacking & Typography Overlap**:
-  - Implemented opaque layer stacking crossfades (`firstOpacity`, `secondOpacity`, `thirdOpacity`), ensuring the underlying video layer remains opaque while top layers fade in, preventing alpha-blending double exposure during fast scrolling.
-  - Aligned typography envelope thresholds for `copies.response` and `copies.final` to prevent headline overlap on laptop screens.
+- **Origin 1:1 timelineFor State Engine**:
+  - Replaced ad-hoc opacity and time calculations with Origin's pure `timelineFor(progress, durations)` engine.
+  - Implemented `ends = duration - 0.04` target time clamping, preventing HTML5 `<video>` EOF buffer stalls and flickering.
+  - Stabilized third video opacity (`opacities[2]`) to solid 1.0 from `progress >= 0.73` to `1.00`, completely eliminating end-of-page black flashes and frame flickering.
+
 
 

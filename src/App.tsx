@@ -42,6 +42,49 @@ function advanceVideo(video: HTMLVideoElement, targetTime: number, speedMultipli
   return true;
 }
 
+type NumberTriplet = [number, number, number];
+type BooleanTriplet = [boolean, boolean, boolean];
+
+type TimelineState = {
+  active: BooleanTriplet;
+  opacities: NumberTriplet;
+  times: NumberTriplet;
+};
+
+function timelineFor(progress: number, durations: NumberTriplet): TimelineState {
+  const ends = durations.map((duration) => Math.max(0, duration - 0.04)) as NumberTriplet;
+  const times: NumberTriplet = [0.02, 0.02, 0.02];
+
+  if (progress < 0.06) {
+    times[0] = 0.02;
+  } else if (progress < 0.34) {
+    times[0] = 0.2 + range(progress, 0.06, 0.34) * (ends[0] - 0.2);
+  } else if (progress <= 0.39) {
+    const transition = range(progress, 0.34, 0.39);
+    times[0] = ends[0];
+    times[1] = 0.02 + transition * (0.35 - 0.02);
+  } else if (progress < 0.68) {
+    times[1] = 0.35 + range(progress, 0.39, 0.68) * (ends[1] - 0.35);
+  } else if (progress <= 0.73) {
+    const transition = range(progress, 0.68, 0.73);
+    times[1] = ends[1];
+    times[2] = 0.02 + transition * (0.4 - 0.02);
+  } else if (progress < 0.97) {
+    times[2] = 0.4 + range(progress, 0.73, 0.97) * (ends[2] - 0.4);
+  } else {
+    times[2] = ends[2];
+  }
+
+  const firstMix = smooth(range(progress, 0.34, 0.39));
+  const secondMix = smooth(range(progress, 0.68, 0.73));
+
+  return {
+    active: [progress <= 0.39, progress >= 0.34 && progress <= 0.73, progress >= 0.68],
+    opacities: [1 - firstMix, firstMix * (1 - secondMix), secondMix],
+    times,
+  };
+}
+
 type CopyRefs = {
   intro: HTMLDivElement | null;
   open: HTMLDivElement | null;
@@ -69,7 +112,7 @@ export default function App() {
     final: null,
     cta: null,
   });
-  const targetTimes = useRef([0, 0, 0]);
+  const targetTimes = useRef<NumberTriplet>([0, 0, 0]);
   const videoReady = useRef([false, false, false]);
   const readyTimerRef = useRef<number | null>(null);
   const [loadProgress, setLoadProgress] = useState(0);
@@ -194,28 +237,18 @@ export default function App() {
     };
 
     const render = (progress: number, speedMultiplier = 1) => {
-      const firstCrossfade = smooth(range(progress, 0.3, 0.36));
-      const secondCrossfade = smooth(range(progress, 0.6, 0.67));
+      const durations = videos.map((video) => video.duration || 0) as NumberTriplet;
+      const timeline = timelineFor(progress, durations);
       const reveal = smooth(range(progress, 0.005, 0.045));
       const finalSignal = smooth(range(progress, 0.78, 0.975));
 
-      const secondReady = videoReady.current[1] && second.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
-      const thirdReady = videoReady.current[2] && third.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
+      videos.forEach((video, index) => {
+        const rawOpacity = timeline.opacities[index];
+        const opacity = index === 0 ? reveal * rawOpacity : rawOpacity;
+        video.style.opacity = opacity.toFixed(3);
+      });
 
-      const firstMix = secondReady ? firstCrossfade : 0;
-      const secondMix = thirdReady ? secondCrossfade : 0;
-
-      const firstOpacity = reveal * (progress > 0.36 ? (1 - firstMix) : 1);
-      const secondOpacity = (secondReady && progress >= 0.30) ? (progress > 0.67 ? (1 - secondMix) : firstMix) : 0;
-      const thirdOpacity = secondMix;
-
-      first.style.opacity = firstOpacity.toFixed(3);
-      second.style.opacity = secondOpacity.toFixed(3);
-      third.style.opacity = thirdOpacity.toFixed(3);
-
-      targetTimes.current[0] = range(progress, 0.04, 0.34) * (first.duration || 0);
-      targetTimes.current[1] = range(progress, 0.34, 0.64) * (second.duration || 0);
-      targetTimes.current[2] = range(progress, 0.64, 0.91) * (third.duration || 0);
+      targetTimes.current = timeline.times;
 
       stage.style.setProperty("--progress", progress.toFixed(4));
       stage.style.setProperty("--signal", finalSignal.toFixed(4));
@@ -245,10 +278,9 @@ export default function App() {
 
       if (reducedMotion || document.hidden) return false;
 
-      const active = [progress <= 0.39, progress >= 0.30 && progress <= 0.73, progress >= 0.60];
       return videos.reduce(
         (needsUpdate, video, index) =>
-          active[index] && videoReady.current[index] && advanceVideo(video, targetTimes.current[index], speedMultiplier)
+          timeline.active[index] && videoReady.current[index] && advanceVideo(video, timeline.times[index], speedMultiplier)
             ? true
             : needsUpdate,
         false,
