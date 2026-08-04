@@ -56,8 +56,8 @@
 }
 
 @layer experience {
-  .experience { position: relative; height: 1040svh; background: #000; }
-  .experience.is-reduced { height: 100svh; }
+  .experience { position: relative; height: 1040vh; height: 1040dvh; background: #000; }
+  .experience.is-reduced { height: 100vh; height: 100dvh; }
   .stage {
     --progress: 0;
     --signal: 0;
@@ -69,7 +69,8 @@
     position: sticky;
     top: 0;
     width: 100%;
-    height: 100svh;
+    height: 100vh;
+    height: 100dvh;
     min-height: 520px;
     overflow: hidden;
     isolation: isolate;
@@ -283,7 +284,7 @@
       --safe-bottom: max(16px, env(safe-area-inset-bottom));
       --safe-left: max(16px, env(safe-area-inset-left));
     }
-    .experience { height: 780svh; }
+    .experience { height: 780vh; height: 780dvh; }
     .stage { min-height: 440px; }
     .system-header { top: calc(var(--safe-top) + 10px); left: calc(var(--safe-left) + 11px); right: calc(var(--safe-right) + 11px); }
     .system-mode > span:first-child, .coordinates, .chapter { display: none; }

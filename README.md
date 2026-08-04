@@ -29,3 +29,9 @@ Workflow `.github/workflows/deploy-pages.yml` buduje i publikuje stronę po każ
 - `PLAN.md`
 
 Filmy mają 1920×1080, 24 FPS, H.264, GOP1 i nie zawierają audio. Trzeci akt rozwija sygnał w odpowiedź mechanizmu i kończy sekwencję komunikatem „YOU HAVE BEEN SEEN”.
+
+## Optymalizacja i obsługa mobile
+
+- **Dynamiczny Viewport Mobile (`100dvh`)**: Kontener sceny korzysta z dynamicznych jednostek wysokości CSS (`100vh` / `100dvh`), wykluczając problem powstawania czarnego paska przy chowaniu paska adresu w Chrome na Androidzie.
+- **Synchronizacja klatek i zapobieganie wyścigom renderowania**: Krosfedy przezroczystości warstw wideo są synchronizowane ze stanem gotowości klatek (`readyState`), co eliminuje czarne błyski i wyścigi klatek przy szybkim scrollowaniu.
+

@@ -173,13 +173,21 @@ export default function App() {
       const secondCrossfade = smooth(range(progress, 0.6, 0.67));
       const reveal = smooth(range(progress, 0.005, 0.045));
       const finalSignal = smooth(range(progress, 0.78, 0.975));
-      const firstOpacity = reveal * (1 - firstCrossfade);
-      const secondOpacity = firstCrossfade * (1 - secondCrossfade);
-      const thirdOpacity = secondCrossfade;
 
       const first = firstVideoRef.current;
       const second = secondVideoRef.current;
       const third = thirdVideoRef.current;
+
+      const secondReady = second && videoReady.current[1] && second.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
+      const thirdReady = third && videoReady.current[2] && third.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
+
+      const effectiveFirstCrossfade = secondReady ? firstCrossfade : 0;
+      const effectiveSecondCrossfade = thirdReady ? secondCrossfade : 0;
+
+      const firstOpacity = reveal * (1 - effectiveFirstCrossfade);
+      const secondOpacity = (secondReady ? firstCrossfade : 0) * (1 - effectiveSecondCrossfade);
+      const thirdOpacity = effectiveSecondCrossfade;
+
       if (first) {
         first.style.opacity = firstOpacity.toFixed(3);
         targetTimes.current[0] = range(progress, 0.04, 0.34) * (first.duration || 0);
@@ -266,7 +274,8 @@ export default function App() {
           const rawTarget = clamp(targetTimes.current[index], 0, maxTime);
           const difference = rawTarget - video.currentTime;
           if (Math.abs(difference) > FRAME_DURATION * 0.62) {
-            const maximumStep = FRAME_DURATION * 2.25;
+            const absDiff = Math.abs(difference);
+            const maximumStep = absDiff > FRAME_DURATION * 4 ? absDiff : FRAME_DURATION * 2.25;
             const steppedTime = video.currentTime + clamp(difference, -maximumStep, maximumStep);
             const target = Math.round(steppedTime / FRAME_DURATION) * FRAME_DURATION;
             video.currentTime = clamp(target, 0, maxTime);
