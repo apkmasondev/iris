@@ -11,4 +11,8 @@ All notable changes to **The Iris** project will be documented in this file.
   - Implemented dynamic scroll-velocity frame step scaling (`speedMultiplier` up to 6x) in `advanceVideo`, eliminating mobile stuttering during rapid scrolling.
   - Implemented video `seeking` frame hold in `tick()`, keeping RAF active until video hardware decoders render target frames.
   - Added `timeline.active` filtering so inactive background videos skip decoding cycles.
+- **Opaque Layer Stacking & Typography Overlap**:
+  - Implemented opaque layer stacking crossfades (`firstOpacity`, `secondOpacity`, `thirdOpacity`), ensuring the underlying video layer remains opaque while top layers fade in, preventing alpha-blending double exposure during fast scrolling.
+  - Aligned typography envelope thresholds for `copies.response` and `copies.final` to prevent headline overlap on laptop screens.
+
 

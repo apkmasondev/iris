@@ -202,12 +202,12 @@ export default function App() {
       const secondReady = videoReady.current[1] && second.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
       const thirdReady = videoReady.current[2] && third.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
 
-      const effectiveFirstCrossfade = secondReady ? firstCrossfade : 0;
-      const effectiveSecondCrossfade = thirdReady ? secondCrossfade : 0;
+      const firstMix = secondReady ? firstCrossfade : 0;
+      const secondMix = thirdReady ? secondCrossfade : 0;
 
-      const firstOpacity = reveal * (1 - effectiveFirstCrossfade);
-      const secondOpacity = (secondReady ? firstCrossfade : 0) * (1 - effectiveSecondCrossfade);
-      const thirdOpacity = effectiveSecondCrossfade;
+      const firstOpacity = reveal * (progress > 0.36 ? (1 - firstMix) : 1);
+      const secondOpacity = (secondReady && progress >= 0.30) ? (progress > 0.67 ? (1 - secondMix) : firstMix) : 0;
+      const thirdOpacity = secondMix;
 
       first.style.opacity = firstOpacity.toFixed(3);
       second.style.opacity = secondOpacity.toFixed(3);
@@ -224,8 +224,8 @@ export default function App() {
       setCopy(copies.intro, reducedMotion ? 0 : envelope(progress, 0.012, 0.04, 0.12), -8 * progress);
       setCopy(copies.open, reducedMotion ? 0 : envelope(progress, 0.14, 0.19, 0.29), -9 * range(progress, 0.14, 0.34));
       setCopy(copies.inward, reducedMotion ? 0 : envelope(progress, 0.36, 0.42, 0.53), -10 * range(progress, 0.36, 0.6));
-      setCopy(copies.response, reducedMotion ? 0 : envelope(progress, 0.6, 0.67, 0.82), -9 * range(progress, 0.6, 0.88));
-      setCopy(copies.final, reducedMotion ? 1 : smooth(range(progress, 0.84, 0.93)), 6 * (1 - finalSignal));
+      setCopy(copies.response, reducedMotion ? 0 : envelope(progress, 0.6, 0.67, 0.78), -9 * range(progress, 0.6, 0.85));
+      setCopy(copies.final, reducedMotion ? 1 : smooth(range(progress, 0.85, 0.93)), 6 * (1 - finalSignal));
       const ctaOpacity = reducedMotion ? 1 : smooth(range(progress, 0.92, 0.985));
       setCopy(copies.cta, ctaOpacity, 5 * (1 - finalSignal));
       if (copies.cta) copies.cta.style.pointerEvents = ctaOpacity > 0.35 ? "auto" : "none";
@@ -245,7 +245,7 @@ export default function App() {
 
       if (reducedMotion || document.hidden) return false;
 
-      const active = [progress <= 0.39, progress >= 0.30 && progress <= 0.70, progress >= 0.60];
+      const active = [progress <= 0.39, progress >= 0.30 && progress <= 0.73, progress >= 0.60];
       return videos.reduce(
         (needsUpdate, video, index) =>
           active[index] && videoReady.current[index] && advanceVideo(video, targetTimes.current[index], speedMultiplier)

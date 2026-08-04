@@ -33,6 +33,7 @@ Filmy mają 1920×1080, 24 FPS, H.264, GOP1 i nie zawierają audio. Trzeci akt r
 ## Optymalizacja i obsługa mobile
 
 - **Dynamiczny Viewport Mobile (`100dvh`)**: Kontener sceny korzysta z dynamicznych jednostek wysokości CSS (`100vh` / `100dvh`), wykluczając problem powstawania czarnego paska przy chowaniu paska adresu w Chrome na Androidzie.
-- **Silnik wideo typu Master-Loop (z projektu Origin)**: Jednolity cykl `requestAnimationFrame` z obsługą oczekiwania na dekodowanie klatek (`seeking-hold`) oraz dynamicznym skalowaniem kroku wideo w zależności od prędkości przewijania (`speedMultiplier`), co eliminuje klatkowanie i przycięcia na urządzeniach mobilnych.
+- **Silnik wideo typu Master-Loop (z projektu Origin)**: Jednolity cykl `requestAnimationFrame` z obsługą oczekiwania na dekodowanie klatek (`seeking-hold`), nieprzezroczystym nakładaniem warstw wideo (brak efektu podwójnej ekspozycji) oraz płynnym rozdzieleniem cyklu napisów sceny.
+
 
 
