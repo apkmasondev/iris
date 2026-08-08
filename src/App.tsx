@@ -17,11 +17,11 @@ const range = (value: number, from: number, to: number) =>
 
 const smooth = (value: number) => value * value * (3 - 2 * value);
 
-const envelope = (value: number, enter: number, hold: number, exit: number) => {
-  const fadeIn = smooth(range(value, enter, hold));
-  const fadeOut = 1 - smooth(range(value, exit, Math.min(exit + 0.07, 1)));
-  return Math.min(fadeIn, fadeOut);
-};
+const fadeOut = (value: number, exit: number) =>
+  1 - smooth(range(value, exit, Math.min(exit + 0.07, 1)));
+
+const envelope = (value: number, enter: number, hold: number, exit: number) =>
+  Math.min(smooth(range(value, enter, hold)), fadeOut(value, exit));
 
 function advanceVideo(video: HTMLVideoElement, targetTime: number, speedMultiplier = 1) {
   const maxTime = Math.max(0, (video.duration || 0) - FRAME_DURATION);
@@ -112,9 +112,11 @@ export default function App() {
     final: null,
     cta: null,
   });
-  const targetTimes = useRef<NumberTriplet>([0, 0, 0]);
   const videoReady = useRef([false, false, false]);
+  const videoSettled = useRef([false, false, false]);
   const readyTimerRef = useRef<number | null>(null);
+  const scheduleRef = useRef<(() => void) | null>(null);
+  const reducedMotionRef = useRef(false);
   const [loadProgress, setLoadProgress] = useState(0);
   const [booting, setBooting] = useState(true);
   const [slowLoad, setSlowLoad] = useState(false);
@@ -135,40 +137,65 @@ export default function App() {
     setLoadProgress(Math.round((amount / videos.length) * 100));
   }, []);
 
+  // A video is "settled" once it can play *or* has failed for good: either way it
+  // must stop holding the loader hostage.
+  const settleVideo = useCallback((index: number) => {
+    if (videoSettled.current[index]) return;
+    videoSettled.current[index] = true;
+
+    if (videoSettled.current.every(Boolean) && readyTimerRef.current === null) {
+      setLoadProgress(100);
+      readyTimerRef.current = window.setTimeout(() => {
+        readyTimerRef.current = null;
+        setBooting(false);
+      }, 380);
+    }
+  }, []);
+
   const markReady = useCallback(
     (index: number, video: HTMLVideoElement) => {
       if (videoReady.current[index]) return;
       videoReady.current[index] = true;
       updateLoader();
 
-      if (reducedMotion && index === 2 && video.duration > 0) {
+      if (reducedMotionRef.current && index === 2 && video.duration > 0) {
         video.currentTime = Math.max(0, video.duration - FRAME_DURATION);
       }
 
-      if (videoReady.current.every(Boolean) && readyTimerRef.current === null) {
-        setLoadProgress(100);
-        readyTimerRef.current = window.setTimeout(() => {
-          readyTimerRef.current = null;
-          setBooting(false);
-        }, 380);
-      }
+      // Sync the freshly decodable video to wherever the scroll already is,
+      // otherwise it keeps showing frame 0 until the next scroll event.
+      scheduleRef.current?.();
+      settleVideo(index);
     },
-    [reducedMotion, updateLoader],
+    [settleVideo, updateLoader],
+  );
+
+  const failVideo = useCallback(
+    (index: number) => {
+      setSlowLoad(true);
+      settleVideo(index);
+    },
+    [settleVideo],
   );
 
   const warmVideo = useCallback((video: HTMLVideoElement) => {
     if (video.duration > 0 && video.currentTime === 0) {
       video.currentTime = Math.min(0.001, video.duration);
       requestAnimationFrame(() => {
-        if (!reducedMotion) video.currentTime = 0;
+        if (!reducedMotionRef.current) video.currentTime = 0;
       });
     }
     updateLoader();
-  }, [reducedMotion, updateLoader]);
+    // Durations are only known now; the timeline needs a pass with real values.
+    scheduleRef.current?.();
+  }, [updateLoader]);
 
   useEffect(() => {
     const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const updateMotion = () => setReducedMotion(motionQuery.matches);
+    const updateMotion = () => {
+      reducedMotionRef.current = motionQuery.matches;
+      setReducedMotion(motionQuery.matches);
+    };
     updateMotion();
     motionQuery.addEventListener("change", updateMotion);
 
@@ -248,20 +275,22 @@ export default function App() {
         video.style.opacity = opacity.toFixed(3);
       });
 
-      targetTimes.current = timeline.times;
-
       stage.style.setProperty("--progress", progress.toFixed(4));
       stage.style.setProperty("--signal", finalSignal.toFixed(4));
       stage.style.setProperty("--reticle", (1 - smooth(range(progress, 0.18, 0.72))).toFixed(4));
 
-      setCopy(copies.intro, reducedMotion ? 0 : envelope(progress, 0.012, 0.04, 0.12), -8 * progress);
+      setCopy(copies.intro, reducedMotion ? 0 : fadeOut(progress, 0.12), -8 * progress);
       setCopy(copies.open, reducedMotion ? 0 : envelope(progress, 0.14, 0.19, 0.29), -9 * range(progress, 0.14, 0.34));
       setCopy(copies.inward, reducedMotion ? 0 : envelope(progress, 0.36, 0.42, 0.53), -10 * range(progress, 0.36, 0.6));
       setCopy(copies.response, reducedMotion ? 0 : envelope(progress, 0.6, 0.67, 0.78), -9 * range(progress, 0.6, 0.85));
       setCopy(copies.final, reducedMotion ? 1 : smooth(range(progress, 0.85, 0.93)), 6 * (1 - finalSignal));
       const ctaOpacity = reducedMotion ? 1 : smooth(range(progress, 0.92, 0.985));
       setCopy(copies.cta, ctaOpacity, 5 * (1 - finalSignal));
-      if (copies.cta) copies.cta.style.pointerEvents = ctaOpacity > 0.35 ? "auto" : "none";
+      if (copies.cta) {
+        copies.cta.style.pointerEvents = ctaOpacity > 0.35 ? "auto" : "none";
+        // Keep the replay button out of the tab order while it is invisible.
+        copies.cta.style.visibility = ctaOpacity > 0.01 ? "visible" : "hidden";
+      }
 
       if (progressRef.current) progressRef.current.style.transform = `scaleY(${Math.max(progress, 0.004)})`;
       if (progressNumberRef.current) progressNumberRef.current.textContent = String(Math.round(progress * 100)).padStart(3, "0");
@@ -317,12 +346,14 @@ export default function App() {
     targetProgress = measureProgress();
     renderedProgress = targetProgress;
     render(renderedProgress);
+    scheduleRef.current = schedule;
 
     window.addEventListener("scroll", schedule, { passive: true });
     window.addEventListener("resize", schedule, { passive: true });
     document.addEventListener("visibilitychange", schedule);
 
     return () => {
+      scheduleRef.current = null;
       window.removeEventListener("scroll", schedule);
       window.removeEventListener("resize", schedule);
       document.removeEventListener("visibilitychange", schedule);
@@ -338,8 +369,6 @@ export default function App() {
     const move = (event: PointerEvent) => {
       const x = (event.clientX / window.innerWidth - 0.5) * 2;
       const y = (event.clientY / window.innerHeight - 0.5) * 2;
-      stage.style.setProperty("--pointer-x", x.toFixed(3));
-      stage.style.setProperty("--pointer-y", y.toFixed(3));
       stage.style.setProperty("--copy-x", `${(x * 2.5).toFixed(2)}px`);
       stage.style.setProperty("--copy-y", `${(y * 2.5).toFixed(2)}px`);
     };
@@ -357,7 +386,6 @@ export default function App() {
   };
 
   const replay = () => {
-    targetTimes.current = [0, 0, 0];
     [firstVideoRef.current, secondVideoRef.current, thirdVideoRef.current].forEach((video) => {
       if (video && video.readyState >= HTMLMediaElement.HAVE_METADATA) video.currentTime = 0;
     });
@@ -388,7 +416,7 @@ export default function App() {
               onLoadedMetadata={(event) => warmVideo(event.currentTarget)}
               onCanPlay={(event) => markReady(0, event.currentTarget)}
               onProgress={updateLoader}
-              onError={() => setSlowLoad(true)}
+              onError={() => failVideo(0)}
             />
             <video
               ref={secondVideoRef}
@@ -401,7 +429,7 @@ export default function App() {
               onLoadedMetadata={(event) => warmVideo(event.currentTarget)}
               onCanPlay={(event) => markReady(1, event.currentTarget)}
               onProgress={updateLoader}
-              onError={() => setSlowLoad(true)}
+              onError={() => failVideo(1)}
             />
             <video
               ref={thirdVideoRef}
@@ -414,7 +442,7 @@ export default function App() {
               onLoadedMetadata={(event) => warmVideo(event.currentTarget)}
               onCanPlay={(event) => markReady(2, event.currentTarget)}
               onProgress={updateLoader}
-              onError={() => setSlowLoad(true)}
+              onError={() => failVideo(2)}
             />
           </div>
 

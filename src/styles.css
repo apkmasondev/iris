@@ -62,8 +62,6 @@
     --progress: 0;
     --signal: 0;
     --reticle: 1;
-    --pointer-x: 0;
-    --pointer-y: 0;
     --copy-x: 0px;
     --copy-y: 0px;
     position: sticky;
@@ -237,6 +235,8 @@
     display: flex;
     align-items: center;
     gap: 13px;
+    /* Kept out of the tab order until the render loop fades it in. */
+    visibility: hidden;
     pointer-events: auto;
   }
   .action-line { width: 33px; height: 1px; background: rgba(235,241,245,.48); }

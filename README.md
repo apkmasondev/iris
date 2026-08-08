@@ -26,7 +26,6 @@ Workflow `.github/workflows/deploy-pages.yml` buduje i publikuje stronę po każ
 - `assets/video/01-iris-opening-gop1.mp4`
 - `assets/video/02-iris-signal-gop1.mp4`
 - `assets/video/03-iris-response-gop1.mp4`
-- `PLAN.md`
 
 Filmy mają 1920×1080, 24 FPS, H.264, GOP1 i nie zawierają audio. Trzeci akt rozwija sygnał w odpowiedź mechanizmu i kończy sekwencję komunikatem „YOU HAVE BEEN SEEN”.
 
