@@ -2,6 +2,27 @@
 
 All notable changes to **The Iris** project will be documented in this file.
 
+## [1.0.1] - 2026-08-25
+
+### Fixed
+- **Loader hung until the emergency timeout.** The release gate waited for
+  `buffered / duration >= 0.5`, a threshold the browser never reaches: with
+  `preload="auto"` on a *paused* element Chrome fills its buffer and then sends
+  `suspend` and stops downloading. Measured against the deployed 1080p master:
+  `readyState` reaches `HAVE_ENOUGH_DATA` and `canplaythrough` fires at 514 ms,
+  buffering plateaus at 0.477 by 1079 ms and never moves again — so the readout
+  parked on `095` and only the 16 s hard fallback let anyone through. The gate
+  is now `HAVE_ENOUGH_DATA`, which is the browser's own estimate that it can
+  play to the end; the byte-count path survives only as a fallback, lowered to
+  0.3. Release time from navigation start: **~16 s → ~1.3 s**.
+- **iOS Safari fetched nothing until playback.** It treats `preload="auto"` as a
+  suggestion and commonly stops at metadata, which would have left the same
+  loader waiting on data that was never coming. A muted inline video is allowed
+  to start without a gesture, so the pipeline is now primed with one
+  `play()`/`pause()` while booting.
+- Slow-signal notice moved to 6 s and the emergency release to 12 s, now that
+  neither is load-bearing.
+
 ## [1.0.0] - 2026-08-25
 
 Full rebuild of the media pipeline and the scroll engine. The original design

@@ -4,12 +4,17 @@ import { MASTER_SRC, POSTER } from "./lib/media.ts";
 import { chapterAt, clamp, envelope, fadeOut, range, smooth } from "./lib/timeline.ts";
 import { createScrubber } from "./lib/scrubber.ts";
 
-/** Buffered fraction that is enough to start; the rest keeps arriving behind the scenes. */
-const BUFFER_TO_START = 0.5;
+/**
+ * Fallback release threshold, used only when the browser never reports
+ * HAVE_ENOUGH_DATA. Deliberately well under half the file: with preload="auto"
+ * Chrome fills its buffer, stops while the element is paused, and never climbs
+ * past roughly half of a 29s master no matter how fast the connection is.
+ */
+const BUFFER_TO_START = 0.3;
 /** Tell the visitor something is wrong, but keep waiting. */
-const SLOW_LOAD_MS = 9000;
+const SLOW_LOAD_MS = 6000;
 /** Give up waiting and show the experience with whatever has arrived. */
-const HARD_RELEASE_MS = 16000;
+const HARD_RELEASE_MS = 12000;
 /** Loader hold once we hit 100%, so the readout is legible rather than a flicker. */
 const RELEASE_HOLD_MS = 360;
 
@@ -67,8 +72,13 @@ export default function App() {
       fraction = 0.06;
     }
 
+    // HAVE_ENOUGH_DATA is the browser's own estimate that it can play to the
+    // end without stalling, which is exactly the question the loader is asking.
+    // Waiting on a byte count past that point just parks on the preload
+    // plateau until the emergency timeout fires.
     const enough =
-      video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA && fraction >= BUFFER_TO_START;
+      video.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA ||
+      (video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA && fraction >= BUFFER_TO_START);
     const shown = enough ? 1 : Math.min(fraction / BUFFER_TO_START, 0.99);
 
     if (loaderNumberRef.current) {
@@ -111,6 +121,31 @@ export default function App() {
     },
     [],
   );
+
+  // iOS Safari treats preload="auto" as a suggestion and commonly fetches
+  // nothing beyond metadata until playback is actually requested. A muted,
+  // inline video may start without a gesture, so kick the pipeline once and
+  // park it again. The cleanup cancels the pending pause, so a promise that
+  // resolves after the loader released cannot stop the scrubber.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!booting || !video) return;
+
+    let cancelled = false;
+    const started = video.play();
+    started?.then(
+      () => {
+        if (!cancelled) video.pause();
+      },
+      () => {
+        // Refused: preload="auto" is all we get, and the timeouts cover it.
+      },
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [booting]);
 
   useEffect(() => {
     const track = trackRef.current;
@@ -256,6 +291,7 @@ export default function App() {
               onLoadedMetadata={updateLoader}
               onLoadedData={updateLoader}
               onProgress={updateLoader}
+              onCanPlay={updateLoader}
               onCanPlayThrough={updateLoader}
               onError={() => setFailed(true)}
             />
