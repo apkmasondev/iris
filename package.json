@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -b --pretty false"
+    "typecheck": "tsc -b --pretty false",
+    "test": "node --test \"tests/*.test.mjs\"",
+    "media": "node scripts/build-media.mjs"
   },
   "dependencies": {
     "react": "19.2.6",
@@ -20,5 +22,7 @@
     "typescript": "5.9.3",
     "vite": "8.2.0"
   },
-  "engines": { "node": ">=22.12" }
+  "engines": {
+    "node": ">=22.12"
+  }
 }

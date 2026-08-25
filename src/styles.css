@@ -22,7 +22,12 @@
     text-rendering: geometricPrecision;
   }
 
-  html { scrollbar-width: none; scroll-behavior: auto; }
+  html {
+    scrollbar-width: none;
+    scroll-behavior: auto;
+    /* Pull-to-refresh at the top of a scroll-driven film is never intentional. */
+    overscroll-behavior-y: none;
+  }
   html::-webkit-scrollbar { display: none; }
   body { min-width: 320px; min-height: 100%; background: #000; color: var(--ink); overflow-x: hidden; }
   button { color: inherit; }
@@ -33,7 +38,7 @@
     padding: 0;
     margin: -1px;
     overflow: hidden;
-    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
     white-space: nowrap;
     border: 0;
   }
@@ -56,8 +61,15 @@
 }
 
 @layer experience {
-  .experience { position: relative; height: 1040vh; height: 1040dvh; background: #000; }
-  .experience.is-reduced { height: 100vh; height: 100dvh; }
+  /*
+   * Scroll length is expressed in `svh` (the *smallest* viewport height) on
+   * purpose: it is the one viewport unit that does not change while a mobile
+   * browser animates its address bar away. `dvh` here would resize the whole
+   * track mid-scroll and make progress jump.
+   */
+  .experience { position: relative; height: 1040vh; height: 1040svh; background: #000; }
+  .experience.is-reduced { height: 100vh; height: 100svh; }
+
   .stage {
     --progress: 0;
     --signal: 0;
@@ -67,30 +79,39 @@
     position: sticky;
     top: 0;
     width: 100%;
+    /* `dvh` keeps the chrome framed against whatever is actually visible. */
     height: 100vh;
     height: 100dvh;
     min-height: 520px;
     overflow: hidden;
     isolation: isolate;
     background: #000;
+    /* The stage is a self-contained scene: nothing inside can affect the
+       document layout, so let the engine skip it during outside reflows. */
+    contain: layout paint style;
   }
 
-  .video-field, .iris-video, .vignette, .grain, .signal-flare, .frame, .copy-layer, .loader {
-    position: absolute;
-    inset: 0;
-  }
-  .video-field { z-index: 0; background: #000; }
+  .video-field, .vignette, .grain, .signal-flare, .frame, .copy-layer { position: absolute; inset: 0; }
+
+  /*
+   * The media layer is sized to the *largest* viewport and anchored to the top,
+   * so it stays exactly one size for the whole session. The stage crops it.
+   * That kills both failure modes of the old build at once: no black bar when
+   * the address bar retracts, and no <video> relayout (which forces the
+   * decoder to rescale) every time it animates.
+   */
+  .video-field { z-index: 0; inset: 0 0 auto 0; height: 100%; background: #000; }
+  @supports (height: 100lvh) { .video-field { height: 100lvh; } }
+
   .iris-video {
+    display: block;
     width: 100%;
     height: 100%;
     object-fit: cover;
     object-position: 50% 50%;
     background: #000;
     opacity: 0;
-    will-change: opacity;
   }
-  .iris-video--two { z-index: 1; }
-  .iris-video--three { z-index: 2; }
 
   .vignette {
     z-index: 2;
@@ -99,6 +120,12 @@
       linear-gradient(to bottom, rgba(0,0,0,.72), transparent 18%, transparent 78%, rgba(0,0,0,.72)),
       radial-gradient(ellipse at center, transparent 38%, rgba(0,0,0,.12) 59%, rgba(0,0,0,.86) 100%);
   }
+
+  /*
+   * Film grain. `soft-light` over a *moving* video means the compositor
+   * re-blends the full viewport every frame, which is real money on a phone
+   * GPU — so touch devices get a plain alpha overlay instead (see below).
+   */
   .grain {
     z-index: 3;
     pointer-events: none;
@@ -109,6 +136,7 @@
     background-size: 4px 4px, 5px 5px;
     mix-blend-mode: soft-light;
   }
+
   .signal-flare {
     z-index: 4;
     pointer-events: none;
@@ -126,13 +154,20 @@
   .corner--tr { top: var(--safe-top); right: var(--safe-right); transform: rotate(90deg); }
   .corner--br { right: var(--safe-right); bottom: var(--safe-bottom); transform: rotate(180deg); }
   .corner--bl { bottom: var(--safe-bottom); left: var(--safe-left); transform: rotate(270deg); }
+
+  /*
+   * Every scroll-driven value below animates `opacity` or `transform` only.
+   * Colours, borders and shadows are static, because a `calc(var(--x))` inside
+   * a paint property repaints the element on every animation frame instead of
+   * staying on the compositor.
+   */
   .reticle {
     position: absolute;
     top: 50%;
     left: 50%;
     width: min(44vw, 44vh);
     aspect-ratio: 1;
-    border: 1px solid rgba(220,230,238,calc(var(--reticle) * .1));
+    border: 1px solid rgba(220, 230, 238, .1);
     border-radius: 50%;
     transform: translate(-50%, -50%) scale(calc(.98 + var(--progress) * .08));
     opacity: var(--reticle);
@@ -184,7 +219,15 @@
   }
   .coordinates { display: flex; gap: 13px; }
   .system-status { display: flex; align-items: center; gap: 9px; color: rgba(228,234,240,.66); }
-  .status-pulse { width: 21px; height: 1px; background: var(--muted); transform: scaleX(calc(.35 + var(--signal) * .65)); transform-origin: left; box-shadow: 0 0 calc(var(--signal) * 10px) rgba(213,230,241,.8); }
+  .status-pulse {
+    width: 21px;
+    height: 1px;
+    background: var(--muted);
+    box-shadow: 0 0 10px rgba(213, 230, 241, .8);
+    opacity: calc(.4 + var(--signal) * .6);
+    transform: scaleX(calc(.35 + var(--signal) * .65));
+    transform-origin: left;
+  }
   .scroll-instruction { justify-self: end; }
 
   .progress {
@@ -205,7 +248,6 @@
 
   .copy-layer { z-index: 7; pointer-events: none; transform: translate3d(var(--copy-x), var(--copy-y), 0); transition: transform 500ms cubic-bezier(.22,.61,.36,1); }
   .scene-copy, .final-action { position: absolute; opacity: 0; will-change: opacity, transform; }
-  .scene-copy { transition: none; }
   .scene-copy p {
     margin-bottom: 12px;
     font: 500 8px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
@@ -227,7 +269,8 @@
   .scene-copy--inward { left: 10vw; bottom: 24%; }
   .scene-copy--response { left: 10vw; bottom: 24%; }
   .scene-copy--final { right: 10vw; bottom: 24%; text-align: right; }
-  .scene-copy--final h2 { text-shadow: 0 0 calc(var(--signal) * 25px) rgba(214,230,240,.18); }
+  .scene-copy--final h2 { text-shadow: 0 0 25px rgba(214, 230, 240, .18); }
+
   .final-action {
     z-index: 9;
     right: 10vw;
@@ -237,7 +280,7 @@
     gap: 13px;
     /* Kept out of the tab order until the render loop fades it in. */
     visibility: hidden;
-    pointer-events: auto;
+    pointer-events: none;
   }
   .action-line { width: 33px; height: 1px; background: rgba(235,241,245,.48); }
   .final-action button {
@@ -253,7 +296,14 @@
   .final-action button:hover span, .final-action button:focus-visible span { transform: translate(3px, -3px); }
   .final-action button:focus-visible { outline: 1px solid var(--ink); outline-offset: 5px; }
 
+  /*
+   * Fixed rather than absolute inside the stage: the media layer is taller than
+   * the stage, so an absolutely positioned loader would leave a sliver of video
+   * uncovered while the address bar is retracted.
+   */
   .loader {
+    position: fixed;
+    inset: 0;
     z-index: 20;
     display: flex;
     flex-direction: column;
@@ -263,18 +313,26 @@
     transition: opacity 900ms cubic-bezier(.22,.61,.36,1), visibility 900ms;
   }
   .loader--complete { opacity: 0; visibility: hidden; pointer-events: none; }
+  /* Nothing is watching it any more; stop burning frames on the calibration dot. */
+  .loader--complete .loader-core span { animation-play-state: paused; }
   .loader-core { position: relative; width: 58px; height: 58px; margin-bottom: 35px; border: 1px solid rgba(223,232,238,.2); border-radius: 50%; }
   .loader-core::before { content: ""; position: absolute; inset: 7px; border: 1px solid rgba(223,232,238,.1); border-radius: inherit; }
   .loader-core span { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; border-radius: 50%; background: #e0e9ef; box-shadow: 0 0 18px rgba(214,233,244,.9); transform: translate(-50%, -50%); animation: calibrate 1.8s ease-in-out infinite; }
   .loader-readout { width: 220px; display: flex; justify-content: space-between; align-items: baseline; font: 500 8px/1 ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: .22em; color: var(--muted); }
   .loader-readout strong { color: var(--ink); font-size: 10px; font-weight: 500; }
   .loader-track { width: 220px; height: 1px; margin-top: 11px; background: var(--hairline); overflow: hidden; }
-  .loader-track span { display: block; width: 100%; height: 100%; background: rgba(236,242,246,.8); transform-origin: left; transition: transform 160ms linear; }
+  .loader-track span { display: block; width: 100%; height: 100%; background: rgba(236,242,246,.8); transform: scaleX(0); transform-origin: left; transition: transform 160ms linear; }
   .loader p { position: absolute; bottom: max(8vh, 44px); padding-inline: 22px; font: 500 8px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: .15em; text-align: center; text-transform: uppercase; color: var(--muted); }
 
   @keyframes calibrate {
     0%, 100% { opacity: .4; transform: translate(-50%, -50%) scale(.8); }
     50% { opacity: 1; transform: translate(-50%, -50%) scale(1.5); }
+  }
+
+  /* Blending a full-screen layer over live video is the single most expensive
+     compositor step on mobile; the flat overlay is visually near-identical. */
+  @media (pointer: coarse) {
+    .grain { mix-blend-mode: normal; opacity: .07; }
   }
 
   @media (max-width: 760px) {
@@ -284,7 +342,7 @@
       --safe-bottom: max(16px, env(safe-area-inset-bottom));
       --safe-left: max(16px, env(safe-area-inset-left));
     }
-    .experience { height: 780vh; height: 780dvh; }
+    .experience { height: 780vh; height: 780svh; }
     .stage { min-height: 440px; }
     .system-header { top: calc(var(--safe-top) + 10px); left: calc(var(--safe-left) + 11px); right: calc(var(--safe-right) + 11px); }
     .system-mode > span:first-child, .coordinates, .chapter { display: none; }
@@ -314,9 +372,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
-    .iris-video--one, .iris-video--two { opacity: 0 !important; }
-    .iris-video--three { opacity: 1 !important; }
-    .reticle { opacity: 0; }
-    .scroll-instruction { display: none; }
+    .reticle, .scroll-instruction { display: none; }
+    .copy-layer { transition: none; }
   }
 }

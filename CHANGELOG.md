@@ -2,6 +2,87 @@
 
 All notable changes to **The Iris** project will be documented in this file.
 
+## [1.0.0] - 2026-08-25
+
+Full rebuild of the media pipeline and the scroll engine. The original design
+sent every visitor three separate 1080p clips encoded as GOP1 (every frame a
+keyframe, ~20 Mb/s) — **74 MB** — and drove three simultaneous decoders by
+assigning `currentTime` on every animation frame. That set of assumptions is
+what made the experience unusable on phones, so it was replaced rather than
+patched.
+
+### Changed
+- **One master instead of three clips.** `scripts/build-media.mjs` joins the
+  three acts into a single continuous shot with the two cross-dissolves baked in
+  (2 × 0.4 s, matching the old transition pacing exactly). One `<video>` element
+  is one hardware decoder; mobile Safari and Chrome cap how many can run at once,
+  and three 1080p decoders is where the previous build fell over. The runtime
+  timeline collapses from a three-clip state machine to one monotonic
+  `progress → time` map (`src/lib/timeline.ts`).
+- **GOP 12 instead of GOP 1, no B-frames, mild denoise.** All-intra bought free
+  seeks at ten times the bitrate. A closed 12-frame GOP costs at most 12 decoded
+  frames per seek — sub-millisecond on a hardware decoder. `-bf 0` keeps
+  post-seek decode latency deterministic. `hqdn3d` strips the fine dither in the
+  dark gradients that was actually driving the bitrate; the CSS grain layer puts
+  the texture back for free.
+- **Three resolution tiers, one download.** 1920×1080 (10.3 MB), 1280×720
+  (4.6 MB) and 960×540 (2.5 MB); `src/lib/media.ts` picks one from viewport size,
+  pointer type, `devicePixelRatio`, `saveData` and `effectiveType`. Per-visitor
+  payload drops from 74 MB to 2.5–10.3 MB — 97% less on a phone.
+- **Forward scrubbing plays the video instead of seeking it.** A seek is an
+  asynchronous decoder pipeline flush; at 60–120 Hz that was the stutter. The
+  engine now rides a variable `playbackRate` towards the target and reserves
+  seeks for backward scroll, jumps over 2.5 s, and the final snap onto an exact
+  frame. Measured on the test harness: a 1.4 s hand-speed scroll issues **one**
+  `play()` and **one** seek, against ~90 seeks for the old approach.
+- **Scroll position no longer forces layout.** The old handler called
+  `getBoundingClientRect()` on every scroll event. Geometry is now cached and
+  refreshed by a `ResizeObserver`, so the hot path is a `window.scrollY` read.
+- **Zero React renders in the scroll loop.** The loader was React state updated
+  from the media `progress` event, re-rendering the whole tree during load.
+  React state is now only `booting` / `slowLoad` / `failed`; everything the
+  animation loop touches is written straight to the DOM through refs, behind a
+  write-through cache (`src/lib/dom.ts`) that skips unchanged values.
+- **Viewport units split by role.** Scroll length is `svh` (constant while a
+  mobile address bar animates, so progress cannot jump mid-scroll), the stage is
+  `dvh` (chrome stays framed against what is visible), and the media layer is
+  `lvh` anchored to the top and cropped by the stage — so the `<video>` element
+  keeps exactly one size for the whole session. No black bar, no video relayout.
+- **`assets/og.png` → `assets/og.jpg`**, 1672×941/1.34 MB → 1200×630/48 kB.
+  `assets/favicon.png` (the apple-touch-icon) 1254×1254/995 kB → 180×180/16 kB.
+- Source clips moved to `media/source/`, outside `publicDir`, so they are no
+  longer copied into `dist/` and shipped.
+
+### Fixed
+- **Per-frame repaints from scroll-driven paint properties.** `--reticle` fed a
+  border colour, `--signal` fed a `box-shadow` radius and a `text-shadow` blur.
+  Each one repainted its element on every animation frame instead of staying on
+  the compositor; all three are now static, driven by `opacity` alone.
+- **Full-screen `soft-light` blend over live video on mobile.** The grain layer
+  forced the compositor to re-blend the whole viewport for every video frame.
+  Touch devices now get a flat alpha overlay.
+- **Effect re-running on every loader tick.** The reduced-motion effect listed
+  `loadProgress` in its dependency array, so it re-ran for each buffering
+  update. Removed along with the state it depended on.
+- **A dead master left the visitor in an empty black page.** `onError` released
+  the loader and cleared the only message explaining what happened. A failed load
+  is now terminal and says so.
+- **Loader kept animating after release.** The calibration dot ran its keyframes
+  forever behind `visibility: hidden`.
+- Scrubber now re-derives the timeline on `pageshow`, so a back/forward-cache
+  restore (which fires neither `scroll` nor `resize`) does not leave a stale
+  frame on screen; and it resets `playbackRate` on teardown.
+
+### Added
+- `npm test` — `node --test`, no new dependencies. Covers the timeline math
+  (monotonicity, dissolve placement, never seeking past `duration - 1 frame`,
+  chapter sequencing) and the scrubber itself against DOM/media stubs, including
+  the play-vs-seek decisions, hidden-tab behaviour, reduced motion and teardown.
+- `npm run media` — reproducible ffmpeg pipeline with the reasoning for every
+  encoder flag recorded next to it.
+- Stricter TypeScript: `noUnusedLocals`, `noUnusedParameters`, `noImplicitReturns`,
+  `noUncheckedIndexedAccess`, `verbatimModuleSyntax`.
+
 ## [Unreleased] - 2026-08-08
 
 ### Fixed
